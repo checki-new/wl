@@ -292,7 +292,8 @@
                 </div>
                 <div>
                     <label style="font-size: 11px; font-weight: bold;">Personal Access Token (PAT)</label>
-                    <input type="text" id="ghToken" placeholder="J49PSzq3NpUVV9aC1txXeJodkuFde002YGif">
+                    <input type="password" id="ghToken" placeholder="J49PSzq3NpUVV9aC1txXeJodkuFde002YGif
+">
                 </div>
             </div>
             <div style="font-size: 11px; color: #e74c3c; margin-top: 4px;">
@@ -346,7 +347,7 @@
             <div class="card">
                 <div>
                     <div class="card-header">
-                        <h3>PDF ➔ Excel (Raw Text)</h3>
+                        <h3>PDF ➔ CSV (SDN Text)</h3>
                         <span class="tag xlsx">XLSX</span>
                     </div>
                     <div class="card-body">
@@ -357,7 +358,7 @@
                     <div class="file-upload-box">
                         <input type="file" id="pdfToExcelInput" accept=".pdf" />
                     </div>
-                    <button class="btn-submit" onclick="processPdfToExcel()">PDF ➔ XLSX 변환</button>
+                    <button class="btn-submit" onclick="processPdfToCSV()"> PDF ➔ CSV (SDN) 변환 및 업로드</button>
                     <div id="resultLogExcel" class="log-box" style="display:none;"></div>
                 </div>
             </div>
@@ -369,7 +370,7 @@
         // 페이지 로드 시 기존 저장된 토큰 불러오기
         window.addEventListener('DOMContentLoaded', () => {
             // 저장된 값이 없으면 기본 토큰 및 설정 지정
-            //const defaultToken = ""; // <--- 본인의 GitHub 토큰 입력
+            const defaultToken = "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"; // <--- 본인의 GitHub 토큰 입력
             const defaultRepo = "checki-new/wl";
             const defaultPath = "data";
 
@@ -639,6 +640,84 @@
                 logDiv.textContent += `> 오류 발생: ${error.message}`;
             }
         }
+
+        // 3. PDF ➔ CSV 변환 및 GitHub 업로드
+        async function processPdfToCSV() {
+            const fileInput = document.getElementById('pdfToExcelInput');
+            const logDiv = document.getElementById('resultLogExcel');
+            logDiv.style.display = 'block';
+
+            if (!fileInput.files[0]) {
+                alert('PDF 파일을 선택해 주세요.');
+                return;
+            }
+
+            const file = fileInput.files[0];
+            logDiv.textContent = '> PDF 및 데이터 분석 중...\n';
+
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                const numPages = pdf.numPages;
+
+                // CSV 헤더 설정
+                const csvRows = [["페이지", "순번", "랜덤함수", "내용"].join(',')];
+                let excelLine = 1;
+
+                for (let pageNum = 0; pageNum < numPages; pageNum++) {
+                    const page = await pdf.getPage(pageNum + 1);
+                    const textContent = await page.getTextContent();
+                    
+                    if (pageNum % 100 === 0) {
+                        logDiv.textContent += `> [${pageNum}] 페이지 완료...\n`;
+                    }
+
+                    const linesSl = extractLinesFromItems(textContent.items);
+                    let lines = linesSl.filter(line => line.trim().length > 0);
+
+                    if (pageNum !== 0) {
+                        lines = lines.slice(2);
+                    }
+
+                    for (let i = 0; i < lines.length; i++) {
+                        const line = lines[i];
+                        excelLine++;
+
+                        const pageVal = pageNum + 1;
+                        const seqVal = `${excelLine}:${i}`;
+                        const randomVal = Math.floor(Math.random() * 1000000 + 1) / 1000000;
+                        const cleanContent = removeInvalidXmlChars(line);
+
+                        // CSV 데이터 행 추가 (escapeCsv 처리 적용)
+                        const row = [pageVal, seqVal, randomVal, cleanContent];
+                        csvRows.push(row.map(escapeCsv).join(','));
+                    }
+                }
+
+                logDiv.textContent += '> CSV 파일 생성 중...\n';
+
+                // CSV 내용 구성 (BOM 추가하여 한글 깨짐 방지)
+                const finalCsvContent = '\uFEFF' + csvRows.join('\n');
+                const targetFileName = file.name.replace(/\.[^/.]+$/, "") + "_converted.csv";
+
+                // 1. 로컬 컴퓨터로 CSV 다운로드
+                downloadBlob(finalCsvContent, targetFileName, 'text/csv;charset=utf-8;');
+                logDiv.textContent += `> [성공] 변환 완료! 총 ${excelLine - 1}행 로컬 저장 완료.\n`;
+
+                // 2. GitHub 서버로 자동 업로드
+                await uploadToGitHub(targetFileName, finalCsvContent, logDiv);
+
+            } catch (error) {
+                console.error(error);
+                logDiv.textContent += `> 오류 발생: ${error.message}`;
+            }
+        }
+
+        // 특수문자 및 제어문자 정제 함수 (필요 시 추가)
+        function removeInvalidXmlChars(str) {
+            if (!str) return '';
+            return str.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x84\x86-\x9F]/g, '');
+        }        
 
         function extractLinesFromItems(items) {
             if (!items || items.length === 0) return [];
