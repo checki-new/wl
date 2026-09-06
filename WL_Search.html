@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WatchList_Search [준법추진파트]</title>
-    <!-- 유사도 계산을 위한 Fuzzball 라이브러리 (thefuzz의 JS 버전을 포함) -->
+    <!-- 유사도 계산을 위한 Fuzzball 라이브러리 -->
     <script src="https://cdn.jsdelivr.net/npm/fuzzball@2.1.2/dist/fuzzball.umd.min.js"></script>
     <!-- CSV 파싱을 위한 PapaParse 라이브러리 -->
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
@@ -18,6 +18,7 @@
             --result-bg: #1e272e;
             --match-color: #2ecc71;
             --error-color: #e74c3c;
+            --warning-color: #f39c12;
         }
 
         body {
@@ -92,11 +93,29 @@
             border-radius: 4px;
             font-size: 12px;
             color: white;
-            transition: background-color 0.3s;
+            transition: all 0.3s;
+        }
+        .badge.loading {
+            background-color: var(--warning-color);
         }
         .badge.loaded { 
             background-color: var(--match-color); 
             font-weight: bold;
+        }
+        .badge.error {
+            background-color: var(--error-color);
+            font-weight: bold;
+        }
+
+        .btn-reload {
+            margin-top: 10px;
+            padding: 5px 12px;
+            background-color: var(--btn-color);
+            border: none;
+            color: white;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
         }
 
         .btn-search {
@@ -134,6 +153,7 @@
         .text-header { color: var(--btn-color); font-weight: bold; font-size: 15px; }
         .text-match { color: var(--match-color); font-weight: bold; }
         .text-error { color: var(--error-color); }
+        .text-warning { color: var(--warning-color); }
     </style>
 </head>
 <body>
@@ -142,15 +162,20 @@
     <header>WatchList 검색 [준법추진파트]</header>
 
     <div class="card">
-        <!-- CSV 파일 등록 영역 -->
+        <!-- CSV 파일 등록 및 서버 로드 영역 -->
         <div class="file-upload-section">
-            <label for="fileInput">📂 WatchList CSV 파일 로드 (여러 파일 선택 가능)</label><br>
-            <input type="file" id="fileInput" multiple accept=".csv" style="margin-top: 8px; width: 100%;">
+            <label>📂 WatchList CSV 파일 상태 (서버 자동 탐색 / 수동 로드)</label>
             <div class="file-status" id="fileStatus">
                 <span class="badge" id="badge-cia">CIA_PEPS.csv</span>
                 <span class="badge" id="badge-ofac">OFAC_SDN.csv</span>
                 <span class="badge" id="badge-un">UN_Sanctions_List.csv</span>
                 <span class="badge" id="badge-fsc">금융거래대상자.csv</span>
+            </div>
+            <button class="btn-reload" onclick="checkAndLoadServerFiles()">🔄 서버 파일 다시 불러오기</button>
+            
+            <div style="margin-top: 15px; border-top: 1px dotted #7f8c8d; padding-top: 10px;">
+                <label for="fileInput" style="font-weight: normal; font-size: 12px;">수동 로드 필요시 선택:</label>
+                <input type="file" id="fileInput" multiple accept=".csv" style="margin-top: 5px; width: 100%;">
             </div>
         </div>
 
@@ -177,7 +202,13 @@
 </div>
 
 <script>
-    // CSV 데이터 및 컬럼 인덱스 매핑 (키값 및 파일 식별 키)
+    // 기본 서버 base 경로 설정
+    const BASE_SERVER_URL = "https://checki-new.github.io/wl/data/";
+    
+    // GitHub Raw URL Fallback (Github Pages 교차 접근 또는 캐시 관련 대비용 주소)
+    const FALLBACK_RAW_URL = "https://raw.githubusercontent.com/checki-new/wl/main/data/";
+
+    // CSV 데이터 구조체 설정
     const csvSources = {
         'CIA_PEPS.csv': { name: 'CIA_peps', nameIdx: 2, data: null, loadedKey: 'cia' },
         'OFAC_SDN.csv': { name: 'OFAC_SDN', nameIdx: 1, data: null, loadedKey: 'ofac' },
@@ -185,7 +216,72 @@
         '금융거래대상자.csv': { name: '금융위원회', nameIdx: 0, data: null, loadedKey: 'fsc' }
     };
 
-    // CSV 파일 업로드 이벤트 핸들러
+    // 웹페이지 로드 시 서버에서 자동으로 CSV 존재 확인 및 다운로드 실행
+    window.addEventListener('DOMContentLoaded', () => {
+        checkAndLoadServerFiles();
+    });
+
+    // 서버 파일 존재 확인 및 로드 로직
+    async function checkAndLoadServerFiles() {
+        const textArea = document.getElementById('textArea');
+        textArea.innerHTML = '';
+        appendText("🔄 서버 경로 [ " + BASE_SERVER_URL + " ] 파일 탐색 중...\n\n", 'text-header');
+
+        for (const fileName of Object.keys(csvSources)) {
+            const source = csvSources[fileName];
+            updateBadgeStatus(source.loadedKey, 'loading', `⏳ ${fileName} (확인중)`);
+
+            let targetUrl = BASE_SERVER_URL + encodeURIComponent(fileName);
+            
+            try {
+                // 1차 시도: GitHub Pages 경로 확인
+                let response = await fetch(targetUrl, { method: 'GET' });
+                
+                // 1차 시도 실패 시 Raw 주소로 2차 시도
+                if (!response.ok) {
+                    console.warn(`[1차 접근 실패] ${targetUrl} (Status: ${response.status}). Fallback 주소로 재시도합니다.`);
+                    targetUrl = FALLBACK_RAW_URL + encodeURIComponent(fileName);
+                    response = await fetch(targetUrl, { method: 'GET' });
+                }
+
+                // 파일이 존재하는 경우 (HTTP Status 200 OK)
+                if (response.ok) {
+                    const csvText = await response.text();
+                    
+                    // PapaParse 이용한 데이터 파싱
+                    Papa.parse(csvText, {
+                        skipEmptyLines: true,
+                        complete: function(results) {
+                            if (results.data && results.data.length > 0) {
+                                source.data = results.data.slice(1); // Header 제거
+                                updateBadgeStatus(source.loadedKey, 'loaded', `✓ ${fileName} (존재함)`);
+                                appendText(`✅ [성공] ${fileName} 파일 발견 및 로드 완료 (총 ${source.data.length}건)\n`);
+                            } else {
+                                updateBadgeStatus(source.loadedKey, 'error', `✕ ${fileName} (빈 파일)`);
+                                appendText(`⚠️ [경고] ${fileName} 파일은 존재하지만 데이터가 없습니다.\n`, 'text-warning');
+                            }
+                        },
+                        error: function(err) {
+                            updateBadgeStatus(source.loadedKey, 'error', `✕ ${fileName} (파싱 실패)`);
+                            appendText(`❌ [오류] ${fileName} 파싱 에러: ${err.message}\n`, 'text-error');
+                        }
+                    });
+                } else {
+                    // 파일이 서버에 존재하지 않음 (404 Not Found 등)
+                    updateBadgeStatus(source.loadedKey, 'error', `✕ ${fileName} (미존재 - ${response.status})`);
+                    appendText(`❌ [미존재] ${fileName} (HTTP Status: ${response.status})\n`, 'text-error');
+                    source.data = null;
+                }
+            } catch (error) {
+                // 네트워크 오류 등으로 접근할 수 없는 경우
+                updateBadgeStatus(source.loadedKey, 'error', `✕ ${fileName} (접근 불가)`);
+                appendText(`❌ [접근 불가] ${fileName} 네트워크/CORS 에러 발생\n`, 'text-error');
+                source.data = null;
+            }
+        }
+    }
+
+    // 수동 CSV 파일 업로드 이벤트 핸들러 (유지)
     document.getElementById('fileInput').addEventListener('change', function(e) {
         const files = e.target.files;
         if (!files || files.length === 0) return;
@@ -193,7 +289,6 @@
         Array.from(files).forEach(file => {
             const fileName = file.name;
             
-            // 등록된 파일 식별 키 찾기 (파일명 일치 또는 키워드 포함 확인)
             let matchedKey = Object.keys(csvSources).find(key => 
                 key.toLowerCase() === fileName.toLowerCase() ||
                 fileName.toLowerCase().includes(csvSources[key].loadedKey) ||
@@ -206,15 +301,12 @@
                     skipEmptyLines: true,
                     complete: function(results) {
                         if (results.data && results.data.length > 0) {
-                            // Header(첫 행) 제외하고 데이터 저장
                             csvSources[matchedKey].data = results.data.slice(1);
-                            
-                            // 초록색 표시 배지(Badge) 업데이트
-                            updateBadge(matchedKey, true, file.name);
+                            updateBadgeStatus(csvSources[matchedKey].loadedKey, 'loaded', `✓ ${matchedKey} (수동 로드됨)`);
+                            appendText(`\n📁 [수동 등록] ${matchedKey} 파일이 수동으로 교체되었습니다.\n`, 'text-match');
                         }
                     },
                     error: function(err) {
-                        console.error("CSV 파싱 오류:", err);
                         alert(`파일 읽기 실패: ${file.name}`);
                     }
                 });
@@ -222,18 +314,15 @@
         });
     });
 
-    // 업로드 상태 표시 배지 업데이트 함수
-    function updateBadge(sourceKey, isLoaded, actualFileName) {
-        const source = csvSources[sourceKey];
-        if (!source) return;
-
-        const badgeId = `badge-${source.loadedKey}`;
+    // 배지 상태 업데이트 함수
+    function updateBadgeStatus(loadedKey, state, text) {
+        const badgeId = `badge-${loadedKey}`;
         const el = document.getElementById(badgeId);
+        if (!el) return;
 
-        if (el && isLoaded) {
-            el.classList.add('loaded');
-            el.innerText = `✓ ${sourceKey} (로드됨)`;
-        }
+        el.classList.remove('loaded', 'error', 'loading');
+        if (state) el.classList.add(state);
+        el.innerText = text;
     }
 
     // 결과 창에 메시지/태그 추가 함수
@@ -257,7 +346,7 @@
         appendText("—".repeat(60) + "\n");
 
         if (!source.data) {
-            appendText(`⚠️ 파일이 로드되지 않았습니다. (${sourceKey} 업로드 필요)\n\n`, 'text-error');
+            appendText(`⚠️ 파일이 서버에서 읽히지 않았거나 로드되지 않았습니다.\n\n`, 'text-error');
             return;
         }
 
@@ -276,7 +365,6 @@
                 foundCount++;
                 appendText(`✅ [유사도 ${similarity}%] ${targetName}\n`, 'text-match');
                 
-                // 주요 데이터 열 최대 8개까지 표시
                 const displayData = row.slice(0, 8).map(cell => String(cell).trim()).join(' | ');
                 appendText(`   상세: ${displayData}\n\n`);
             }
@@ -299,14 +387,12 @@
         }
 
         const textArea = document.getElementById('textArea');
-        textArea.innerHTML = ''; // 이전 결과 화면 초기화
+        textArea.innerHTML = '';
 
-        // 업로드된 CSV 대상 전체 순차 검색
         Object.keys(csvSources).forEach(key => {
             searchInCsv(key, searchName, threshold);
         });
 
-        // 스크롤 맨 위로 이동
         textArea.scrollTop = 0;
     }
 </script>
