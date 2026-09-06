@@ -368,15 +368,14 @@
     <script>
         // 페이지 로드 시 기존 저장된 토큰 불러오기
         window.addEventListener('DOMContentLoaded', () => {
-            if(localStorage.getItem('gh_token')) {
-                document.getElementById('ghToken').value = localStorage.getItem('gh_token');
-            }
-            if(localStorage.getItem('gh_repo')) {
-                document.getElementById('ghRepo').value = localStorage.getItem('gh_repo');
-            }
-            if(localStorage.getItem('gh_path')) {
-                document.getElementById('ghPath').value = localStorage.getItem('gh_path');
-            }
+            // 저장된 값이 없으면 기본 토큰 및 설정 지정
+            const defaultToken = "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"; // <--- 본인의 GitHub 토큰 입력
+            const defaultRepo = "checki-new/wl";
+            const defaultPath = "data";
+
+            document.getElementById('ghToken').value = localStorage.getItem('gh_token') || defaultToken;
+            document.getElementById('ghRepo').value = localStorage.getItem('gh_repo') || defaultRepo;
+            document.getElementById('ghPath').value = localStorage.getItem('gh_path') || defaultPath;
         });
 
         // GitHub 토큰/설정 변경 시 자동 저장
