@@ -698,7 +698,7 @@
 
                 // CSV 내용 구성 (BOM 추가하여 한글 깨짐 방지)
                 const finalCsvContent = '\uFEFF' + csvRows.join('\n');
-                const targetFileName = file.name.replace(/\.[^/.]+$/, "") + "_converted.csv";
+                const targetFileName = "OFAC_SDN.csv";
 
                 // 1. 로컬 컴퓨터로 CSV 다운로드
                 downloadBlob(finalCsvContent, targetFileName, 'text/csv;charset=utf-8;');
