@@ -168,7 +168,7 @@
             <div class="file-status" id="fileStatus">
                 <span class="badge" id="badge-cia">CIA_PEPS.csv</span>
                 <span class="badge" id="badge-ofac">OFAC_SDN.csv</span>
-                <span class="badge" id="badge-ofac">OFAC_SDN_XML.csv</span>
+                <span class="badge" id="badge-ofac-xml">OFAC_SDN_XML.csv</span>
                 <span class="badge" id="badge-un">UN_Sanctions_List.csv</span>
                 <span class="badge" id="badge-fsc">금융거래대상자.csv</span>
             </div>
@@ -213,6 +213,7 @@
     const csvSources = {
         'CIA_PEPS.csv': { name: 'CIA_peps', nameIdx: 2, data: null, loadedKey: 'cia' },
         'OFAC_SDN.csv': { name: 'OFAC_SDN', nameIdx: 1, data: null, loadedKey: 'ofac' },
+        'OFAC_SDN_XML.csv': { name: 'OFAC_SDN_XML', nameIdx: 2, data: null, loadedKey: 'ofac-xml' },
         'UN_Sanctions_List.csv': { name: 'UN_List', nameIdx: 1, data: null, loadedKey: 'un' },
         '금융거래대상자.csv': { name: '금융위원회', nameIdx: 0, data: null, loadedKey: 'fsc' }
     };
@@ -282,7 +283,7 @@
         }
     }
 
-    // 수동 CSV 파일 업로드 이벤트 핸들러 (유지)
+    // 수동 CSV 파일 업로드 이벤트 핸들러
     document.getElementById('fileInput').addEventListener('change', function(e) {
         const files = e.target.files;
         if (!files || files.length === 0) return;
@@ -290,9 +291,13 @@
         Array.from(files).forEach(file => {
             const fileName = file.name;
             
+            // 정확한 파일명 매칭을 위해 조건 강화
             let matchedKey = Object.keys(csvSources).find(key => 
                 key.toLowerCase() === fileName.toLowerCase() ||
-                fileName.toLowerCase().includes(csvSources[key].loadedKey) ||
+                (fileName.toLowerCase().includes('ofac_sdn_xml') && key.includes('OFAC_SDN_XML')) ||
+                (!fileName.toLowerCase().includes('xml') && fileName.toLowerCase().includes('ofac_sdn') && key === 'OFAC_SDN.csv') ||
+                (fileName.toLowerCase().includes('cia') && key.includes('CIA')) ||
+                (fileName.toLowerCase().includes('un') && key.includes('UN')) ||
                 (key.includes('금융') && fileName.includes('금융'))
             );
             
