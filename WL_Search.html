@@ -118,6 +118,29 @@
             font-size: 12px;
         }
 
+        /* 통계 및 막대그래프 영역 추가 스타일 */
+        .chart-card {
+            background-color: var(--card-color);
+            padding: 20px;
+            border-radius: 6px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .chart-title {
+            font-size: 14px;
+            font-weight: bold;
+            color: #38bdf8;
+        }
+        .chart-container {
+            width: 100%;
+            height: 220px;
+            background-color: rgba(0, 0, 0, 0.2);
+            border-radius: 4px;
+            padding: 10px;
+            box-sizing: border-box;
+        }
+
         .btn-search {
             grid-column: 3;
             grid-row: 2 / span 2;
@@ -198,6 +221,14 @@
         </select>
     </div>
 
+    <!-- 파일별 건수 막대그래프 영역 추가 -->
+    <div class="chart-card">
+        <div class="chart-title">📊 WatchList 파일별 보유 데이터 건수 현황</div>
+        <div class="chart-container">
+            <canvas id="barChart" style="width: 100%; height: 100%;"></canvas>
+        </div>
+    </div>
+
     <!-- 결과 출력 영역 -->
     <div class="result-area" id="textArea"></div>
 </div>
@@ -211,16 +242,22 @@
 
     // CSV 데이터 구조체 설정
     const csvSources = {
-        'CIA_PEPS.csv': { name: 'CIA_peps', nameIdx: 2, data: null, loadedKey: 'cia' },
-        'OFAC_SDN.csv': { name: 'OFAC_SDN', nameIdx: 1, data: null, loadedKey: 'ofac' },
-        'OFAC_SDN_XML.csv': { name: 'OFAC_SDN_XML', nameIdx: 2, data: null, loadedKey: 'ofac-xml' },
-        'UN_Sanctions_List.csv': { name: 'UN_List', nameIdx: 1, data: null, loadedKey: 'un' },
-        '금융거래대상자.csv': { name: '금융위원회', nameIdx: 0, data: null, loadedKey: 'fsc' }
+        'CIA_PEPS.csv': { name: 'CIA PEPS', nameIdx: 2, data: null, loadedKey: 'cia', color: '#3498db' },
+        'OFAC_SDN.csv': { name: 'OFAC SDN', nameIdx: 1, data: null, loadedKey: 'ofac', color: '#e67e22' },
+        'OFAC_SDN_XML.csv': { name: 'OFAC SDN(XML)', nameIdx: 2, data: null, loadedKey: 'ofac-xml', color: '#9b59b6' },
+        'UN_Sanctions_List.csv': { name: 'UN Sanctions', nameIdx: 1, data: null, loadedKey: 'un', color: '#2ecc71' },
+        '금융거래대상자.csv': { name: '금융위원회', nameIdx: 0, data: null, loadedKey: 'fsc', color: '#e74c3c' }
     };
 
     // 웹페이지 로드 시 서버에서 자동으로 CSV 존재 확인 및 다운로드 실행
     window.addEventListener('DOMContentLoaded', () => {
         checkAndLoadServerFiles();
+        renderChart(); // 최초 초기 차트 렌더링
+    });
+
+    // 창 크기 변경 시 그래프 재렌더링
+    window.addEventListener('resize', () => {
+        renderChart();
     });
 
     // 서버 파일 존재 확인 및 로드 로직
@@ -229,7 +266,7 @@
         textArea.innerHTML = '';
         appendText("🔄 서버 경로 [ " + BASE_SERVER_URL + " ] 파일 탐색 중...\n\n", 'text-header');
 
-        for (const fileName of Object.keys(csvSources)) {
+        const loadPromises = Object.keys(csvSources).map(async (fileName) => {
             const source = csvSources[fileName];
             updateBadgeStatus(source.loadedKey, 'loading', `⏳ ${fileName} (확인중)`);
 
@@ -250,37 +287,43 @@
                 if (response.ok) {
                     const csvText = await response.text();
                     
-                    // PapaParse 이용한 데이터 파싱
-                    Papa.parse(csvText, {
-                        skipEmptyLines: true,
-                        complete: function(results) {
-                            if (results.data && results.data.length > 0) {
-                                source.data = results.data.slice(1); // Header 제거
-                                updateBadgeStatus(source.loadedKey, 'loaded', `✓ ${fileName} (존재함)`);
-                                appendText(`✅ [성공] ${fileName} 파일 발견 및 로드 완료 (총 ${source.data.length}건)\n`);
-                            } else {
-                                updateBadgeStatus(source.loadedKey, 'error', `✕ ${fileName} (빈 파일)`);
-                                appendText(`⚠️ [경고] ${fileName} 파일은 존재하지만 데이터가 없습니다.\n`, 'text-warning');
+                    return new Promise((resolve) => {
+                        Papa.parse(csvText, {
+                            skipEmptyLines: true,
+                            complete: function(results) {
+                                if (results.data && results.data.length > 0) {
+                                    source.data = results.data.slice(1); // Header 제거
+                                    updateBadgeStatus(source.loadedKey, 'loaded', `✓ ${fileName} (존재함)`);
+                                    appendText(`✅ [성공] ${fileName} 파일 발견 및 로드 완료 (총 ${source.data.length}건)\n`);
+                                } else {
+                                    updateBadgeStatus(source.loadedKey, 'error', `✕ ${fileName} (빈 파일)`);
+                                    appendText(`⚠️ [경고] ${fileName} 파일은 존재하지만 데이터가 없습니다.\n`, 'text-warning');
+                                    source.data = null;
+                                }
+                                resolve();
+                            },
+                            error: function(err) {
+                                updateBadgeStatus(source.loadedKey, 'error', `✕ ${fileName} (파싱 실패)`);
+                                appendText(`❌ [오류] ${fileName} 파싱 에러: ${err.message}\n`, 'text-error');
+                                source.data = null;
+                                resolve();
                             }
-                        },
-                        error: function(err) {
-                            updateBadgeStatus(source.loadedKey, 'error', `✕ ${fileName} (파싱 실패)`);
-                            appendText(`❌ [오류] ${fileName} 파싱 에러: ${err.message}\n`, 'text-error');
-                        }
+                        });
                     });
                 } else {
-                    // 파일이 서버에 존재하지 않음 (404 Not Found 등)
                     updateBadgeStatus(source.loadedKey, 'error', `✕ ${fileName} (미존재 - ${response.status})`);
                     appendText(`❌ [미존재] ${fileName} (HTTP Status: ${response.status})\n`, 'text-error');
                     source.data = null;
                 }
             } catch (error) {
-                // 네트워크 오류 등으로 접근할 수 없는 경우
                 updateBadgeStatus(source.loadedKey, 'error', `✕ ${fileName} (접근 불가)`);
                 appendText(`❌ [접근 불가] ${fileName} 네트워크/CORS 에러 발생\n`, 'text-error');
                 source.data = null;
             }
-        }
+        });
+
+        await Promise.all(loadPromises);
+        renderChart(); // 파일 로드 후 차트 업데이트
     }
 
     // 수동 CSV 파일 업로드 이벤트 핸들러
@@ -288,10 +331,10 @@
         const files = e.target.files;
         if (!files || files.length === 0) return;
         
+        let readCount = 0;
         Array.from(files).forEach(file => {
             const fileName = file.name;
             
-            // 정확한 파일명 매칭을 위해 조건 강화
             let matchedKey = Object.keys(csvSources).find(key => 
                 key.toLowerCase() === fileName.toLowerCase() ||
                 (fileName.toLowerCase().includes('ofac_sdn_xml') && key.includes('OFAC_SDN_XML')) ||
@@ -309,7 +352,8 @@
                         if (results.data && results.data.length > 0) {
                             csvSources[matchedKey].data = results.data.slice(1);
                             updateBadgeStatus(csvSources[matchedKey].loadedKey, 'loaded', `✓ ${matchedKey} (수동 로드됨)`);
-                            appendText(`\n📁 [수동 등록] ${matchedKey} 파일이 수동으로 교체되었습니다.\n`, 'text-match');
+                            appendText(`\n📁 [수동 등록] ${matchedKey} 파일이 수동으로 교체되었습니다. (총 ${csvSources[matchedKey].data.length}건)\n`, 'text-match');
+                            renderChart(); // 수동 로드 시 차트 신규 업데이트
                         }
                     },
                     error: function(err) {
@@ -319,6 +363,86 @@
             }
         });
     });
+
+    // HTML5 Canvas 기반 막대그래프 생성 함수
+    function renderChart() {
+        const canvas = document.getElementById('barChart');
+        if (!canvas) return;
+
+        const ctx = canvas.getContext('2d');
+        const rect = canvas.parentElement.getBoundingClientRect();
+        
+        // 고해상도 Canvas 스케일 설정
+        canvas.width = rect.width;
+        canvas.height = rect.height;
+
+        const width = canvas.width;
+        const height = canvas.height;
+
+        ctx.clearRect(0, 0, width, height);
+
+        const keys = Object.keys(csvSources);
+        const counts = keys.map(k => csvSources[k].data ? csvSources[k].data.length : 0);
+        const maxCount = Math.max(...counts, 100); // 0 방지 최소값 설정
+
+        const paddingBottom = 35;
+        const paddingTop = 25;
+        const paddingLeft = 50;
+        const paddingRight = 20;
+
+        const chartWidth = width - paddingLeft - paddingRight;
+        const chartHeight = height - paddingTop - paddingBottom;
+
+        // 배경 가로 가이드라인 및 Y축 눈금 그리기
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.1)";
+        ctx.fillStyle = "#95a5a6";
+        ctx.font = "10px sans-serif";
+        ctx.textAlign = "right";
+
+        const ticks = 4;
+        for (let i = 0; i <= ticks; i++) {
+            const yVal = Math.round((maxCount / ticks) * i);
+            const yPos = height - paddingBottom - (chartHeight / ticks) * i;
+
+            ctx.beginPath();
+            ctx.moveTo(paddingLeft, yPos);
+            ctx.lineTo(width - paddingRight, yPos);
+            ctx.stroke();
+
+            ctx.fillText(yVal.toLocaleString(), paddingLeft - 8, yPos + 3);
+        }
+
+        // 각 파일별 막대그래프 구현
+        const barGap = 15;
+        const totalBarArea = chartWidth - (barGap * (keys.length + 1));
+        const barWidth = Math.max(totalBarArea / keys.length, 10);
+
+        keys.forEach((key, idx) => {
+            const source = csvSources[key];
+            const count = source.data ? source.data.length : 0;
+            const barHeight = (count / maxCount) * chartHeight;
+
+            const x = paddingLeft + barGap + idx * (barWidth + barGap);
+            const y = height - paddingBottom - barHeight;
+
+            // 막대 그리기
+            ctx.fillStyle = source.color || '#3498db';
+            ctx.beginPath();
+            ctx.roundRect(x, y, barWidth, barHeight, [4, 4, 0, 0]);
+            ctx.fill();
+
+            // 건수 수치 표시 (막대 상단)
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 11px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(count.toLocaleString() + '건', x + barWidth / 2, y - 6);
+
+            // 파일 라벨 표시 (하단)
+            ctx.fillStyle = '#ecf0f1';
+            ctx.font = '11px sans-serif';
+            ctx.fillText(source.name, x + barWidth / 2, height - 12);
+        });
+    }
 
     // 배지 상태 업데이트 함수
     function updateBadgeStatus(loadedKey, state, text) {
