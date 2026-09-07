@@ -203,8 +203,9 @@
                 width: 100%;
             }
 
+            /* 모바일에서 범례가 잘리지 않도록 높이 확보 */
             .chart-container {
-                height: 320px;
+                height: 380px;
             }
         }
     </style>
@@ -386,9 +387,10 @@
         // 화면폭에 따라 레이아웃 구분 (모바일 vs 데스크톱)
         const isMobile = width < 500;
         
+        // 모바일 위치 좌표 최적화 (도넛을 위로 살짝 올림)
         const centerX = isMobile ? width / 2 : width * 0.35;
-        const centerY = isMobile ? height * 0.38 : height / 2;
-        const outerRadius = Math.min(width, height) * (isMobile ? 0.28 : 0.36);
+        const centerY = isMobile ? height * 0.30 : height / 2;
+        const outerRadius = Math.min(width, height) * (isMobile ? 0.23 : 0.36);
         const innerRadius = outerRadius * 0.58;
 
         let startAngle = -0.5 * Math.PI;
@@ -437,10 +439,10 @@
         ctx.font = 'bold 14px sans-serif';
         ctx.fillText(totalCount.toLocaleString() + '건', centerX, centerY + 10);
 
-        // 우측/하단 범례(Legend) 리스트 작성
-        const legendX = isMobile ? 10 : width * 0.62;
-        let legendY = isMobile ? height * 0.73 : (height - (keys.length * 28)) / 2 + 10;
-        const lineSpacing = isMobile ? 22 : 28;
+        // 우측/하단 범례(Legend) 리스트 작성 (시작 Y축 높이 및 간격 최적화)
+        const legendX = isMobile ? 15 : width * 0.62;
+        let legendY = isMobile ? height * 0.58 : (height - (keys.length * 28)) / 2 + 10;
+        const lineSpacing = isMobile ? 24 : 28;
 
         keys.forEach((key) => {
             const source = csvSources[key];
@@ -448,7 +450,7 @@
 
             // 색상 아이콘 (원)
             ctx.beginPath();
-            ctx.arc(legendX + 5, legendY, 4, 0, 2 * Math.PI);
+            ctx.arc(legendX + 6, legendY, 5, 0, 2 * Math.PI);
             
             if (source.status === 'loaded') {
                 ctx.fillStyle = source.color;
@@ -459,22 +461,22 @@
             }
             ctx.fill();
 
-            // 항목 이름 및 상태 표기 (✓) - 모바일 환경 폰트 크기 미세 조정(11px)
+            // 항목 이름 및 상태 표기 (✓)
             ctx.textAlign = 'left';
             ctx.textBaseline = 'middle';
             ctx.fillStyle = source.status === 'loaded' ? '#16a34a' : '#334155';
-            ctx.font = isMobile ? 'bold 11px sans-serif' : 'bold 12px sans-serif';
+            ctx.font = 'bold 12px sans-serif';
             
             const statusSymbol = source.status === 'loaded' ? '✓ ' : '';
-            ctx.fillText(`${statusSymbol}${source.name}`, legendX + 14, legendY);
+            ctx.fillText(`${statusSymbol}${source.name}`, legendX + 18, legendY);
 
             // 건수 및 상태 텍스트
             ctx.textAlign = 'right';
-            const rightX = isMobile ? width - 10 : width - 25;
+            const rightX = isMobile ? width - 15 : width - 25;
 
             if (source.status === 'loaded') {
                 ctx.fillStyle = '#0f172a';
-                ctx.font = isMobile ? '500 11px sans-serif' : '500 12px sans-serif';
+                ctx.font = '500 12px sans-serif';
                 ctx.fillText(`${count.toLocaleString()}건`, rightX, legendY);
             } else if (source.status === 'loading') {
                 ctx.fillStyle = '#d97706';
