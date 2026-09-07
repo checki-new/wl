@@ -327,7 +327,7 @@
             <div class="card">
                 <div>
                     <div class="card-header">
-                        <h3>금융위원회 지정 목록</h3>
+                        <h3>금융위원회(금융거래제한대상자) 지정 목록</h3>
                         <span class="tag pdf">PDF</span>
                     </div>
                     <div class="card-body">
@@ -347,11 +347,11 @@
             <div class="card">
                 <div>
                     <div class="card-header">
-                        <h3>PDF ➔ CSV (SDN Text)</h3>
-                        <span class="tag xlsx">XLSX</span>
+                        <h3>OFAC SDN 리스트 (PDF ➔ CSV)</h3>
+                        <span class="tag xlsx">CSV</span>
                     </div>
                     <div class="card-body">
-                        PDF 텍스트를 추출하여 엑셀 문서로 변환 및 보관합니다.
+                        PDF 텍스트를 추출하여 CSV파일로 변환 및 보관합니다.
                     </div>
                 </div>
                 <div>
@@ -362,6 +362,26 @@
                     <div id="resultLogExcel" class="log-box" style="display:none;"></div>
                 </div>
             </div>
+
+            <!-- 모듈 4: PDF to Excel Raw Text -->
+            <div class="card">
+                <div>
+                    <div class="card-header">
+                        <h3>OFAC SDN 리스트 (XML ➔ CSV)</h3>
+                        <span class="tag xlsx">CSV</span>
+                    </div>
+                    <div class="card-body">
+                        XML 추출하여 CSV파일로 변환 및 보관합니다.
+                    </div>
+                </div>
+                <div>
+                    <div class="file-upload-box">
+                        <input type="file" id="xmlToCsvInput" accept=".xml" />
+                    </div>
+                    <button class="btn-submit" onclick="processXMLToCSV()"> XML ➔ CSV (SDN) 변환 및 업로드</button>
+                    <div id="resultLogExcel" class="log-box" style="display:none;"></div>
+                </div>
+            </div>            
 
         </div>
     </main>
@@ -712,6 +732,106 @@
                 logDiv.textContent += `> 오류 발생: ${error.message}`;
             }
         }
+
+        // 4. OFAC SDN XML ➔ CSV 변환 및 GitHub 업로드
+        async function processXMLToCSV() {
+            const fileInput = document.getElementById('xmlToCsvInput');
+            const logDiv = document.getElementById('resultLogExcel');
+            logDiv.style.display = 'block';
+
+            if (!fileInput.files[0]) {
+                alert('XML 파일을 선택해 주세요.');
+                return;
+            }
+
+            const file = fileInput.files[0];
+            logDiv.textContent = '> OFAC SDN XML 분석 시작...\n';
+
+            try {
+                const xmlText = await file.text();
+                const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(xmlText, "text/xml");
+
+        if (xmlDoc.querySelector('parsererror')) {
+            throw new Error("올바른 XML 형식이 아닙니다.");
+        }
+
+        // CSV 헤더 정의
+        const csvRows = [[
+            "UID", 
+            "Type", 
+            "Name", 
+            "Programs", 
+            "AKAs", 
+            "Addresses", 
+            "DOB"
+        ].join(',')];
+
+        const entries = xmlDoc.querySelectorAll('sdnEntry');
+
+        entries.forEach(entry => {
+            const uid = getTextContent(entry, 'uid');
+            const sdnType = getTextContent(entry, 'sdnType');
+            
+            // 이름 조합 (lastName, firstName)
+            const firstName = getTextContent(entry, 'firstName');
+            const lastName = getTextContent(entry, 'lastName');
+            const name = [firstName, lastName].filter(Boolean).join(' ');
+
+            // Program 리스트 추출 (구분자: |)
+            const programs = Array.from(entry.querySelectorAll('programList > program'))
+                .map(p => p.textContent.trim())
+                .filter(Boolean)
+                .join(' | ');
+
+            // AKA 리스트 추출
+            const akas = Array.from(entry.querySelectorAll('akaList > aka'))
+                .map(aka => {
+                    const fn = getTextContent(aka, 'firstName');
+                    const ln = getTextContent(aka, 'lastName');
+                    return [fn, ln].filter(Boolean).join(' ');
+                })
+                .filter(Boolean)
+                .join(' | ');
+
+            // Address 리스트 추출 (City, Country 조합)
+            const addresses = Array.from(entry.querySelectorAll('addressList > address'))
+                .map(addr => {
+                    const city = getTextContent(addr, 'city');
+                    const country = getTextContent(addr, 'country');
+                    return [city, country].filter(Boolean).join(', ');
+                })
+                .filter(Boolean)
+                .join(' | ');
+
+            // DOB (생년월일) 추출
+            const dobs = Array.from(entry.querySelectorAll('dateOfBirthList > dateOfBirthItem > dateOfBirth'))
+                .map(dob => dob.textContent.trim())
+                .filter(Boolean)
+                .join(' | ');
+
+            const row = [uid, sdnType, name, programs, akas, addresses, dobs];
+            csvRows.push(row.map(escapeCsv).join(','));
+        });
+
+        logDiv.textContent += `> 변환 성공! 총 ${entries.length}건 데이터 추출 완료.\n`;
+
+        // UTF-8 BOM 추가하여 한글/특수문자 깨짐 방지
+        const finalCsvContent = '\uFEFF' + csvRows.join('\n');
+        const targetFileName = 'OFAC_SDN_XML.csv';
+
+        // 1. 로컬 저장
+        downloadBlob(finalCsvContent, targetFileName, 'text/csv;charset=utf-8;');
+        logDiv.textContent += `> [성공] ${targetFileName} 로컬 다운로드 완료.\n`;
+
+        // 2. GitHub 서버로 자동 업로드
+        await uploadToGitHub(targetFileName, finalCsvContent, logDiv);
+
+    } catch (error) {
+        console.error(error);
+        logDiv.textContent += `> 오류 발생: ${error.message}\n`;
+    }
+}        
 
         // 특수문자 및 제어문자 정제 함수 (필요 시 추가)
         function removeInvalidXmlChars(str) {
