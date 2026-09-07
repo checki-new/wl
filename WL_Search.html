@@ -59,7 +59,7 @@
             align-items: center;
         }
 
-        /* 막대그래프 영역 카드 스타일 */
+        /* 차트 영역 카드 스타일 */
         .chart-card {
             background-color: var(--card-color);
             padding: 20px;
@@ -75,6 +75,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            gap: 10px;
         }
 
         .chart-title {
@@ -85,7 +86,7 @@
 
         .chart-container {
             width: 100%;
-            height: 230px;
+            height: 260px;
             background-color: #f8fafc;
             border: 1px solid var(--border-color);
             border-radius: 6px;
@@ -107,6 +108,8 @@
             outline: none;
             background-color: #ffffff;
             color: var(--text-color);
+            box-sizing: border-box;
+            width: 100%;
         }
 
         input[type="text"]:focus, select:focus {
@@ -123,6 +126,7 @@
             font-size: 12px;
             font-weight: 600;
             transition: background-color 0.2s;
+            white-space: nowrap;
         }
         .btn-reload:hover {
             background-color: var(--btn-hover);
@@ -141,6 +145,7 @@
             height: 100%;
             min-height: 80px;
             transition: background-color 0.2s;
+            width: 100%;
         }
 
         .btn-search:hover {
@@ -165,6 +170,43 @@
         .text-match { color: var(--match-color); font-weight: bold; }
         .text-error { color: var(--error-color); font-weight: bold; }
         .text-warning { color: var(--warning-color); font-weight: bold; }
+
+        /* 모바일 대응 반응형 CSS */
+        @media (max-width: 600px) {
+            body {
+                padding: 10px;
+            }
+
+            header {
+                font-size: 20px;
+            }
+
+            .card {
+                grid-template-columns: 1fr;
+                gap: 8px;
+            }
+
+            .btn-search {
+                grid-column: 1;
+                grid-row: auto;
+                min-height: 48px;
+                font-size: 15px;
+                margin-top: 6px;
+            }
+
+            .chart-header-row {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .btn-reload {
+                width: 100%;
+            }
+
+            .chart-container {
+                height: 320px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -172,14 +214,14 @@
 <div class="container">
     <header>WatchList 검색 [준법추진파트]</header>
 
-    <!-- 1. 파일별 건수 및 상태 통합 막대그래프 -->
+    <!-- 1. 파일별 건수 및 상태 통합 도넛그래프 -->
     <div class="chart-card">
         <div class="chart-header-row">
             <div class="chart-title">📊 WatchList 파일 현황 및 데이터 건수</div>
             <button class="btn-reload" onclick="checkAndLoadServerFiles()">🔄 서버 파일 다시 불러오기</button>
         </div>
         <div class="chart-container">
-            <canvas id="barChart" style="width: 100%; height: 100%;"></canvas>
+            <canvas id="doughnutChart" style="width: 100%; height: 100%;"></canvas>
         </div>
     </div>
 
@@ -187,8 +229,6 @@
     <div class="card">
         <label for="entryName">성명</label>
         <input type="text" id="entryName" placeholder="검색할 성명 입력" onkeydown="if(event.key==='Enter') performSearch()">
-
-        <button class="btn-search" onclick="performSearch()">조회 (SEARCH)</button>
 
         <label for="comboThreshold">유사도(%)</label>
         <select id="comboThreshold">
@@ -200,6 +240,8 @@
             <option value="90">90</option>
             <option value="100">100</option>
         </select>
+
+        <button class="btn-search" onclick="performSearch()">조회 (SEARCH)</button>
     </div>
 
     <!-- 3. 결과 출력 영역 -->
@@ -210,7 +252,7 @@
     const BASE_SERVER_URL = "https://checki-new.github.io/wl/data/";
     const FALLBACK_RAW_URL = "https://raw.githubusercontent.com/checki-new/wl/main/data/";
 
-    // 파스텔 색상 정의 적용 (Pastel Blue, Orange, Purple, Emerald, Pink)
+    // 파스텔 색상 정의
     const csvSources = {
         'CIA_PEPS.csv': { name: 'CIA PEPS', nameIdx: 2, data: null, status: 'loading', color: '#93c5fd' },
         'OFAC_SDN.csv': { name: 'OFAC SDN', nameIdx: 1, data: null, status: 'loading', color: '#fdba74' },
@@ -322,9 +364,9 @@
         await Promise.all(loadPromises);
     }
 
-    // 그림자 효과 및 파스텔톤 막대그래프 렌더링 함수
+    // 도넛그래프 및 범례(Legend) 렌더링 함수
     function renderChart() {
-        const canvas = document.getElementById('barChart');
+        const canvas = document.getElementById('doughnutChart');
         if (!canvas) return;
 
         const ctx = canvas.getContext('2d');
@@ -339,90 +381,112 @@
         ctx.clearRect(0, 0, width, height);
 
         const keys = Object.keys(csvSources);
-        const counts = keys.map(k => csvSources[k].data ? csvSources[k].data.length : 0);
-        const maxCount = Math.max(...counts, 100);
+        const totalCount = keys.reduce((sum, k) => sum + (csvSources[k].data ? csvSources[k].data.length : 0), 0);
 
-        const paddingBottom = 40;
-        const paddingTop = 30;
-        const paddingLeft = 50;
-        const paddingRight = 20;
+        // 화면폭에 따라 레이아웃 구분 (모바일 vs 데스크톱)
+        const isMobile = width < 500;
+        
+        const centerX = isMobile ? width / 2 : width * 0.35;
+        const centerY = isMobile ? height * 0.38 : height / 2;
+        const outerRadius = Math.min(width, height) * (isMobile ? 0.28 : 0.36);
+        const innerRadius = outerRadius * 0.58;
 
-        const chartWidth = width - paddingLeft - paddingRight;
-        const chartHeight = height - paddingTop - paddingBottom;
+        let startAngle = -0.5 * Math.PI;
 
-        // 배경 눈금선
-        ctx.strokeStyle = "#e2e8f0";
-        ctx.fillStyle = "#64748b";
-        ctx.font = "11px sans-serif";
-        ctx.textAlign = "right";
-
-        const ticks = 4;
-        for (let i = 0; i <= ticks; i++) {
-            const yVal = Math.round((maxCount / ticks) * i);
-            const yPos = height - paddingBottom - (chartHeight / ticks) * i;
-
-            ctx.beginPath();
-            ctx.moveTo(paddingLeft, yPos);
-            ctx.lineTo(width - paddingRight, yPos);
-            ctx.stroke();
-
-            ctx.fillText(yVal.toLocaleString(), paddingLeft - 8, yPos + 4);
-        }
-
-        const barGap = 20;
-        const totalBarArea = chartWidth - (barGap * (keys.length + 1));
-        const barWidth = Math.max(totalBarArea / keys.length, 12);
-
-        keys.forEach((key, idx) => {
+        // 도넛 세그먼트 그리기
+        keys.forEach((key) => {
             const source = csvSources[key];
             const count = source.data ? source.data.length : 0;
-            const barHeight = (count / maxCount) * chartHeight;
+            
+            // 데이터가 아예 없는 초기 상태인 경우 균등 분할
+            const sliceAngle = totalCount > 0 
+                ? (count / totalCount) * (2 * Math.PI) 
+                : (1 / keys.length) * (2 * Math.PI);
 
-            const x = paddingLeft + barGap + idx * (barWidth + barGap);
-            const y = height - paddingBottom - barHeight;
-
-            // 막대에 부드러운 그림자 효과 설정
             ctx.save();
-            if (source.status === 'loaded' && count > 0) {
-                ctx.shadowColor = 'rgba(0, 0, 0, 0.08)';
-                ctx.shadowBlur = 8;
-                ctx.shadowOffsetY = 4;
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, outerRadius, startAngle, startAngle + sliceAngle);
+            ctx.arc(centerX, centerY, innerRadius, startAngle + sliceAngle, startAngle, true);
+            ctx.closePath();
+
+            // 그림자 및 색상 처리
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.06)';
+            ctx.shadowBlur = 6;
+            
+            if (source.status === 'loaded') {
                 ctx.fillStyle = source.color;
             } else if (source.status === 'loading') {
                 ctx.fillStyle = '#fde68a';
             } else {
                 ctx.fillStyle = '#fca5a5';
             }
-
-            if (count > 0) {
-                ctx.beginPath();
-                ctx.roundRect(x, y, barWidth, barHeight, [6, 6, 0, 0]);
-                ctx.fill();
-            }
+            ctx.fill();
             ctx.restore();
 
-            // 막대 상단 데이터 건수 및 상태 표시
-            ctx.textAlign = 'center';
+            startAngle += sliceAngle;
+        });
+
+        // 도넛 중앙 총 건수 표시
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#64748b';
+        ctx.font = '11px sans-serif';
+        ctx.fillText('총 데이터', centerX, centerY - 8);
+
+        ctx.fillStyle = '#0f172a';
+        ctx.font = 'bold 14px sans-serif';
+        ctx.fillText(totalCount.toLocaleString() + '건', centerX, centerY + 10);
+
+        // 우측/하단 범례(Legend) 리스트 작성
+        const legendX = isMobile ? 15 : width * 0.62;
+        let legendY = isMobile ? height * 0.73 : (height - (keys.length * 28)) / 2 + 10;
+        const lineSpacing = isMobile ? 22 : 28;
+
+        keys.forEach((key) => {
+            const source = csvSources[key];
+            const count = source.data ? source.data.length : 0;
+
+            // 색상 아이콘 (원)
+            ctx.beginPath();
+            ctx.arc(legendX + 6, legendY, 5, 0, 2 * Math.PI);
+            
             if (source.status === 'loaded') {
-                ctx.fillStyle = '#0f172a';
-                ctx.font = 'bold 12px sans-serif';
-                ctx.fillText(count.toLocaleString() + '건', x + barWidth / 2, y - 8);
+                ctx.fillStyle = source.color;
             } else if (source.status === 'loading') {
                 ctx.fillStyle = '#d97706';
-                ctx.font = 'bold 11px sans-serif';
-                ctx.fillText('⏳ 확인중', x + barWidth / 2, height - paddingBottom - 8);
             } else {
                 ctx.fillStyle = '#dc2626';
-                ctx.font = 'bold 11px sans-serif';
-                ctx.fillText('✕ 미존재', x + barWidth / 2, height - paddingBottom - 8);
+            }
+            ctx.fill();
+
+            // 항목 이름 및 상태 표기 (✓)
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = source.status === 'loaded' ? '#16a34a' : '#334155';
+            ctx.font = 'bold 12px sans-serif';
+            
+            const statusSymbol = source.status === 'loaded' ? '✓ ' : '';
+            ctx.fillText(`${statusSymbol}${source.name}`, legendX + 18, legendY);
+
+            // 건수 및 상태 텍스트
+            ctx.textAlign = 'right';
+            const rightX = isMobile ? width - 15 : width - 25;
+
+            if (source.status === 'loaded') {
+                ctx.fillStyle = '#0f172a';
+                ctx.font = '500 12px sans-serif';
+                ctx.fillText(`${count.toLocaleString()}건`, rightX, legendY);
+            } else if (source.status === 'loading') {
+                ctx.fillStyle = '#d97706';
+                ctx.font = '11px sans-serif';
+                ctx.fillText('⏳ 확인중', rightX, legendY);
+            } else {
+                ctx.fillStyle = '#dc2626';
+                ctx.font = '11px sans-serif';
+                ctx.fillText('✕ 미존재', rightX, legendY);
             }
 
-            // X축 라벨명 및 존재 여부 체크 표시(✓)
-            ctx.fillStyle = source.status === 'loaded' ? '#16a34a' : '#334155';
-            ctx.font = '500 12px sans-serif';
-            
-            const labelText = source.status === 'loaded' ? `✓ ${source.name}` : source.name;
-            ctx.fillText(labelText, x + barWidth / 2, height - 16);
+            legendY += lineSpacing;
         });
     }
 
@@ -458,7 +522,6 @@
             const targetName = String(row[source.nameIdx]).trim();
             if (!targetName) return;
             
-            // 적용된 퍼지 유사도 계산
             const similarity = calculateFuzzySimilarity(searchName, targetName);
 
             if (similarity >= threshold) {
