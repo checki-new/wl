@@ -330,7 +330,7 @@
                         <span class="tag pdf">PDF</span>
                     </div>
                     <div class="card-body">
-                        "대상자 (1066명)" 감지 후 정제하여 CSV로 생성하고 GitHub 경로로 자동 업로드합니다.
+                        "대상자 (1066명)" 감지 후 정제하여 순번, 성명, 기타 정보로 구분된 CSV로 생성하고 GitHub 경로로 자동 업로드합니다.
                     </div>
                 </div>
                 <div>
@@ -591,7 +591,7 @@
             }
         }
 
-        // 2. 금융위 PDF ➔ CSV 변환 및 업로드
+        // 2. 금융위 PDF ➔ CSV 변환 및 업로드 (수정본)
         async function processAndDownloadPdf() {
             const fileInput = document.getElementById('pdfFileInput');
             const logDiv = document.getElementById('resultLog1');
@@ -609,7 +609,7 @@
                 const arrayBuffer = await file.arrayBuffer();
                 const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
 
-                let allData = [];
+                let rawEntries = [];
                 let currentEntry = "";
                 let isTargetZone = false;
                 let startPageNum = 0;
@@ -645,7 +645,7 @@
                         if (itemStartPattern.test(line) && !isDateOrSuffix && !isContinuationByContext) {
                             if (currentEntry) {
                                 const cleanStr = currentEntry.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
-                                allData.push(cleanStr);
+                                rawEntries.push(cleanStr);
                             }
                             currentEntry = line;
                         } else {
@@ -658,16 +658,55 @@
 
                 if (currentEntry) {
                     const cleanStr = currentEntry.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
-                    allData.push(cleanStr);
+                    rawEntries.push(cleanStr);
                 }
 
-                if (allData.length > 0) {
-                    const csvRows = allData.map(entry => escapeCsv(entry));
-                    const finalCsvContent = '\uFEFF' + csvRows.join('\n');
+                if (rawEntries.length > 0) {
+                    // CSV 헤더 설정: 순번, 성명, 기타 정보
+                    const parsedRows = [["순번", "성명", "기타 정보"].map(escapeCsv).join(',')];
+
+                    rawEntries.forEach(entry => {
+                        const match = entry.match(/^\s*(\d+)\.\s*(.+)$/);
+                        let seq = "";
+                        let rest = entry;
+                        
+                        if (match) {
+                            seq = match[1];
+                            rest = match[2];
+                        }
+
+                        let name = "";
+                        let info = "";
+
+                        // 성명 정제: 밑줄 표시용 서식 태그 <ins>, <u> 제거 및 괄호/구분기호 전까지의 성명 추출
+                        const cleanRest = rest.replace(/<\/?(ins|u)>/gi, '');
+                        
+                        // 1. 첫 번째 괄호 '(' 또는 '[' 가 나오는 위치 탐색
+                        const parenIndex = cleanRest.search(/[\(\[]/);
+                        
+                        if (parenIndex !== -1) {
+                            name = cleanRest.substring(0, parenIndex).trim();
+                            info = cleanRest.substring(parenIndex).trim();
+                        } else {
+                            // 괄호가 없는 경우 공백 기준 분할
+                            const spaceIndex = cleanRest.indexOf(' ');
+                            if (spaceIndex !== -1) {
+                                name = cleanRest.substring(0, spaceIndex).trim();
+                                info = cleanRest.substring(spaceIndex).trim();
+                            } else {
+                                name = cleanRest.trim();
+                                info = "";
+                            }
+                        }
+
+                        parsedRows.push([seq, name, info].map(escapeCsv).join(','));
+                    });
+
+                    const finalCsvContent = '\uFEFF' + parsedRows.join('\n');
                     const targetFileName = '금융거래대상자.csv';
 
                     downloadBlob(finalCsvContent, targetFileName, 'text/csv;charset=utf-8;');
-                    logDiv.textContent += `> [완료] ${startPageNum}p부터 총 ${allData.length}건 로컬 저장 완료.`;
+                    logDiv.textContent += `> [완료] ${startPageNum}p부터 총 ${rawEntries.length}건 (순번, 성명, 기타 정보 파싱 완료) 로컬 저장 완료.`;
 
                     // GitHub 서버로 업로드
                     await uploadToGitHub(targetFileName, finalCsvContent, logDiv);
