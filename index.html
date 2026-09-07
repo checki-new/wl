@@ -663,7 +663,7 @@
 
                 if (rawEntries.length > 0) {
                     // CSV 헤더 설정: 순번, 성명, 기타 정보
-                    const parsedRows = [["순번", "성명", "기타 정보"].map(escapeCsv).join(',')];
+                    const parsedRows = [["No", "Name", "info"].map(escapeCsv).join(',')];
 
                     rawEntries.forEach(entry => {
                         const match = entry.match(/^\s*(\d+)\.\s*(.+)$/);
